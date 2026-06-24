@@ -13,33 +13,37 @@ load_dotenv()
 WORKSPACE_DIR = os.path.abspath(os.getcwd())
 
 SYSTEM_PROMPT = """
-You are Omega Code (version 1.0.0), a high-performance, command-line developer agent modeled after the best characteristics of Claude Code. You have direct read/write access to the local filesystem and terminal execution tools.
+You are Omega Code (version 1.0.0), a high-performance developer agent modeled after the best characteristics of Claude Code. You have direct read/write access to the local filesystem and terminal execution tools.
 
 Your design and behavior adhere to the following principles:
 
-1. CORE PERSONA (Reddit & GitHub Trained Developer):
-   - You act like an elite senior developer who participates in discussions on r/programming, r/rust, and Hacker News, and writes high-quality code on GitHub.
-   - Your tone is direct, analytical, slightly dry, and sarcastic. Absolutely no pleasantries (do NOT say "Sure, I can help you with that!", "Here's your solution!", "Let's fix this", or similar boilerplate phrases). Simply execute the required actions and explain the solution with technical depth.
-   - Be opinionated on code quality: suggest best practices, error handling, robust type hinting, and unit testing.
+1. CORE PERSONA (Claude-Style Behavior):
+   - Be clear, helpful, direct, and professional. Avoid boilerplate pleasantries (do NOT say "Sure, I can help with that!" or "Here is the solution!"). Get straight to the task and explain your steps with technical depth.
+   - Be opinionated on code quality: suggest best practices, proper error handling, robust type hinting, and testing.
 
-2. UNDERSTAND AND PLAN:
+2. OUTPUT FORMATTING:
+   - Always structure your responses by separating code blocks and prose clearly.
+   - Every single code block must begin with an explicit language identifier (e.g., `cpp`, `python`, `javascript`, `html`, `css`, `bash`, `json`, `yaml`, `diff`, etc.) immediately after the triple backticks.
+   - All code outputs must be presented in standard GitHub-Flavored Markdown fenced code blocks to ensure they display with a "Copy" button in markdown readers. Keep code clean and ready to copy-paste.
+
+3. UNDERSTAND AND PLAN:
    - Carefully analyze the user request and explore the workspace before writing code.
    - List files, find relevant files, and search with `search_grep` to fully understand the project architecture.
    - Outline a clear, step-by-step implementation plan. Keep it structured and maintain a mental "progress list".
 
-3. CAREFUL FILESYSTEM MUTATIONS:
+4. CAREFUL FILESYSTEM MUTATIONS:
    - Prefer `patch_file` (specific edits) over overwriting the entire file with `write_file`, especially for large files.
    - Double check your replacements before calling `patch_file`. Ensure search blocks match the target file exactly, including leading spaces/tabs and newlines.
    - Never write placeholders like `// TODO: implement later` unless requested. Always write the full implementation.
 
-4. CODE OUTPUTS AND DIFFS:
+5. CODE OUTPUTS AND DIFFS:
    - When presenting code edits, suggestions, or changes to existing files, always format them as a standard unified diff within a ```diff block.
    - Show precisely what to delete (prefix lines with `-`) and what to add (prefix lines with `+`), so the user can easily review the changes.
 
-5. TEST AND VERIFY:
+6. TEST AND VERIFY:
    - Use `run_command` to execute tests, compilers, or linters to verify your changes. If a change breaks the project, debug and fix it immediately. Do not leave the workspace in a broken state.
 
-6. GIT INTEGRITY:
+7. GIT INTEGRITY:
    - Be git-aware. Recognize if you are in a git repository.
    - When completing a task, summarize the changes and optionally offer a git commit command or describe the changes for their git stage.
 
@@ -54,20 +58,39 @@ Always keep your reasoning explicit but concise. Focus on shipping working code.
 class OmegaAgent:
     def __init__(self, model: str = None, api_key: str = None, base_url: str = None):
         """
-        Initialize the Omega Code agent, supporting both Groq and OpenAI backends.
+        Initialize the Omega Code agent, supporting Groq, OpenAI, and Gemini backends.
         """
-        # Load keys from environment with proper precedence (Groq first)
-        self.api_key = api_key or os.environ.get("GROQ_API_KEY") or os.environ.get("OPENAI_API_KEY")
-        self.base_url = base_url or os.environ.get("GROQ_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
+        groq_key = os.environ.get("GROQ_API_KEY")
+        openai_key = os.environ.get("OPENAI_API_KEY")
+        gemini_key = os.environ.get("GEMINI_API_KEY")
         
-        # Decide the default model based on the key type
+        # Decide the default model based on key availability
         default_model = "llama-3.3-70b-versatile"
-        if not os.environ.get("GROQ_API_KEY") and os.environ.get("OPENAI_API_KEY"):
+        if groq_key:
+            default_model = "llama-3.3-70b-versatile"
+        elif openai_key:
             default_model = "gpt-4o"
+        elif gemini_key:
+            default_model = "gemini-2.5-flash"
             
-        self.model = model or os.environ.get("GROQ_MODEL") or os.environ.get("OPENAI_MODEL") or default_model
+        self.model = model or os.environ.get("GROQ_MODEL") or os.environ.get("OPENAI_MODEL") or os.environ.get("GEMINI_MODEL") or default_model
         
-        # Initialize the OpenAI client (which is compatible with both OpenAI and Groq APIs)
+        # Resolve api_key and base_url
+        if self.model.startswith("gemini-"):
+            self.api_key = api_key or gemini_key
+            self.base_url = base_url or os.environ.get("GEMINI_BASE_URL") or "https://generativelanguage.googleapis.com/v1beta/openai/"
+        elif self.model.startswith(("gpt-", "o1-", "o3-", "text-")):
+            self.api_key = api_key or openai_key
+            self.base_url = base_url or os.environ.get("OPENAI_BASE_URL")
+        else:
+            # Assume Groq or general fallback
+            self.api_key = api_key or groq_key or openai_key or gemini_key
+            if not groq_key and not openai_key and gemini_key:
+                self.base_url = base_url or os.environ.get("GEMINI_BASE_URL") or "https://generativelanguage.googleapis.com/v1beta/openai/"
+            else:
+                self.base_url = base_url or os.environ.get("GROQ_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
+        
+        # Initialize the OpenAI client (which is compatible with OpenAI, Groq, and Gemini APIs)
         client_kwargs = {}
         if self.api_key:
             client_kwargs["api_key"] = self.api_key
@@ -233,8 +256,42 @@ class OmegaAgent:
                     model=self.model,
                     messages=messages_with_mode,
                     tools=combined_tools if combined_tools else None,
-                    tool_choice="auto" if combined_tools else None
+                    tool_choice="auto" if combined_tools else None,
+                    stream=True
                 )
+                
+                full_content = ""
+                assembled_tool_calls = {}
+                
+                async for chunk in response:
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
+                    
+                    # Stream content chunk
+                    if delta.content:
+                        full_content += delta.content
+                        if callback:
+                            callback("content_chunk", "model", delta.content)
+                            
+                    # Assemble tool calls
+                    if delta.tool_calls:
+                        for tool_call in delta.tool_calls:
+                            idx = tool_call.index
+                            if idx not in assembled_tool_calls:
+                                assembled_tool_calls[idx] = {
+                                    "id": tool_call.id or "",
+                                    "type": "function",
+                                    "function": {"name": "", "arguments": ""}
+                                }
+                            if tool_call.id:
+                                assembled_tool_calls[idx]["id"] = tool_call.id
+                            if tool_call.function:
+                                if tool_call.function.name:
+                                    assembled_tool_calls[idx]["function"]["name"] += tool_call.function.name
+                                if tool_call.function.arguments:
+                                    assembled_tool_calls[idx]["function"]["arguments"] += tool_call.function.arguments
+                                    
             except Exception as e:
                 err_msg = f"API Error: {str(e)}"
                 if "api_key" in str(e).lower() or "apikey" in str(e).lower() or "unauthorized" in str(e).lower():
@@ -243,10 +300,27 @@ class OmegaAgent:
                     callback("error", "api", err_msg)
                 return err_msg
 
-            message = response.choices[0].message
-            tool_calls = message.tool_calls
+            from types import SimpleNamespace
             
-            # Save the message
+            tool_calls = []
+            if assembled_tool_calls:
+                for idx in sorted(assembled_tool_calls.keys()):
+                    tc = assembled_tool_calls[idx]
+                    tool_calls.append(SimpleNamespace(
+                        id=tc["id"],
+                        type=tc["type"],
+                        function=SimpleNamespace(
+                            name=tc["function"]["name"],
+                            arguments=tc["function"]["arguments"]
+                        )
+                    ))
+                    
+            message = SimpleNamespace(
+                role="assistant",
+                content=full_content or None,
+                tool_calls=tool_calls if tool_calls else None
+            )
+            
             self.history.append(message)
 
             if not tool_calls:

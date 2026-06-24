@@ -27,7 +27,7 @@ Omega Code is a production-grade, autonomous developer agent and interactive des
 ### 1. Prerequisites
 - **Python 3.12+**
 - **Node.js 18+ & npm** (required to compile and bundle the React GUI files)
-- **Groq API Key** (for fast, efficient model completions) or **OpenAI API Key**
+- **Groq API Key**, **Gemini API Key**, or **OpenAI API Key** (for model completions)
 
 ### 2. Installation
 Clone the repository and navigate into the root directory:
@@ -55,6 +55,11 @@ Open the `.env` file and insert your API Key:
 GROQ_API_KEY="your_groq_api_key"
 GROQ_BASE_URL=https://api.groq.com/openai/v1
 GROQ_MODEL=llama-3.3-70b-versatile
+
+# Gemini API Configuration
+GEMINI_API_KEY="your_gemini_api_key"
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+GEMINI_MODEL=gemini-2.5-flash
 
 # Fallback OpenAI API Configuration
 OPENAI_API_KEY=

@@ -147,10 +147,40 @@ export default function App() {
           
         case "chat_response":
           setThinking(false);
-          addMessageToActiveChat({
-            id: Date.now() + Math.random(),
-            role: "assistant",
-            content: msg.response
+          setChats(prevChats => {
+            return prevChats.map(c => {
+              if (c.id === currentChatId) {
+                const messages = c.messages || [];
+                const lastMsg = messages[messages.length - 1];
+                if (lastMsg && lastMsg.role === "assistant") {
+                  return {
+                    ...c,
+                    messages: [
+                      ...messages.slice(0, -1),
+                      {
+                        ...lastMsg,
+                        content: msg.response,
+                        isStreaming: false
+                      }
+                    ]
+                  };
+                } else {
+                  return {
+                    ...c,
+                    messages: [
+                      ...messages,
+                      {
+                        id: Date.now() + Math.random(),
+                        role: "assistant",
+                        content: msg.response,
+                        isStreaming: false
+                      }
+                    ]
+                  };
+                }
+              }
+              return c;
+            });
           });
           if (voiceOutput) {
             speakText(msg.response);
@@ -192,9 +222,49 @@ export default function App() {
     });
   };
 
+  const appendChunkToLastAssistantMessage = (chunk) => {
+    setChats(prevChats => {
+      return prevChats.map(c => {
+        if (c.id === currentChatId) {
+          const messages = c.messages || [];
+          const lastMsg = messages[messages.length - 1];
+          if (lastMsg && lastMsg.role === "assistant" && lastMsg.isStreaming) {
+            return {
+              ...c,
+              messages: [
+                ...messages.slice(0, -1),
+                {
+                  ...lastMsg,
+                  content: lastMsg.content + chunk
+                }
+              ]
+            };
+          } else {
+            return {
+              ...c,
+              messages: [
+                ...messages,
+                {
+                  id: Date.now() + Math.random(),
+                  role: "assistant",
+                  content: chunk,
+                  isStreaming: true
+                }
+              ]
+            };
+          }
+        }
+        return c;
+      });
+    });
+  };
+
   const handleAgentCallback = (stepType, name, data) => {
     if (stepType === "thinking") {
       setThinking(true);
+    } else if (stepType === "content_chunk") {
+      setThinking(false);
+      appendChunkToLastAssistantMessage(data);
     } else if (stepType === "tool_call") {
       setThinking(false);
       addMessageToActiveChat({
@@ -728,6 +798,12 @@ export default function App() {
               onChange={(e) => changeModel(e.target.value)}
               className="model-select"
             >
+              <optgroup label="Gemini Models">
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+              </optgroup>
               <optgroup label="Groq Models">
                 <option value="llama-3.3-70b-versatile">Llama 3.3 70B</option>
                 <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
@@ -774,7 +850,7 @@ export default function App() {
                     </div>
                   </div>
                   <div className="card-right-actions">
-                    <span className="card-model-label">Sonnet 4.6 Max</span>
+                    <span className="card-model-label">Claude 3.5 Sonnet</span>
                     
                     <button 
                       onClick={toggleListening} 
@@ -1101,6 +1177,10 @@ export default function App() {
                         value={model} 
                         onChange={(e) => changeModel(e.target.value)}
                       >
+                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Google AI Studio)</option>
+                        <option value="gemini-2.5-pro">Gemini 2.5 Pro (Google AI Studio)</option>
+                        <option value="gemini-1.5-flash">Gemini 1.5 Flash (Google AI Studio)</option>
+                        <option value="gemini-1.5-pro">Gemini 1.5 Pro (Google AI Studio)</option>
                         <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Groq Cloud)</option>
                         <option value="mixtral-8x7b-32768">Mixtral 8x7B (Groq Cloud)</option>
                         <option value="gemma2-9b-it">Gemma 2 9B (Groq Cloud)</option>

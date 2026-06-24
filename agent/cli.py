@@ -38,7 +38,7 @@ def print_banner():
         "╚██████╔╝██║ ╚═╝ ██║███████╗╚██████╔╝██║  ██║    ╚██████╗╚██████╔╝██████╔╝███████╗\n"
         " ╚═════╝ ╚═╝     ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝     ╚═════╝ ╚═════╝╚══════╝╚══════╝[/bold cyan]\n"
         "                                                                               \n"
-        "           [bold green]Omega Code Agent (v1.1.0)[/bold green] | Powered by Groq/OpenAI\n"
+        "           [bold green]Omega Code Agent (v1.1.0)[/bold green] | Powered by Groq/OpenAI/Gemini\n"
         "       [dim]Claude Code architecture with custom interactive modes and MCP extensions[/dim]\n"
     )
     console.print(Panel(banner_text, border_style="cyan", expand=False))
@@ -130,17 +130,22 @@ async def ask_tool_approval(tool_name: str, tool_args: Dict[str, Any]) -> bool:
         return False
 
 def ensure_api_key():
-    """Ensure that either GROQ_API_KEY or OPENAI_API_KEY is present."""
-    if not os.environ.get("GROQ_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
+    """Ensure that GROQ_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY is present."""
+    if not os.environ.get("GROQ_API_KEY") and not os.environ.get("OPENAI_API_KEY") and not os.environ.get("GEMINI_API_KEY"):
         console.print("[bold yellow]⚠️  No API Key found in environment.[/bold yellow]")
-        console.print("Please enter your [bold cyan]Groq API Key[/bold cyan] (or OpenAI API Key).")
+        console.print("Please enter your [bold cyan]Gemini API Key[/bold cyan], [bold cyan]Groq API Key[/bold cyan], or [bold cyan]OpenAI API Key[/bold cyan].")
         api_key = input("API Key: ").strip()
         if not api_key:
             console.print("[bold red]An API key is required to run the agent. Exiting.[/bold red]")
             sys.exit(1)
         # Write to .env file
         env_path = os.path.join(os.getcwd(), ".env")
-        key_name = "GROQ_API_KEY" if api_key.startswith("gsk_") else "OPENAI_API_KEY"
+        if api_key.startswith("AIzaSy"):
+            key_name = "GEMINI_API_KEY"
+        elif api_key.startswith("gsk_"):
+            key_name = "GROQ_API_KEY"
+        else:
+            key_name = "OPENAI_API_KEY"
         try:
             set_key(env_path, key_name, api_key)
             os.environ[key_name] = api_key

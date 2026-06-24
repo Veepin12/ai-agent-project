@@ -143,6 +143,7 @@ async def websocket_endpoint(websocket: WebSocket):
     
     # Define callbacks that push details directly over WebSocket
     def agent_callback(step_type: str, name: str, data: Any):
+        print(f"[WS agent_callback] step_type={step_type}, name={name}")
         # We wrap it in a thread-safe / async loop task
         asyncio.run_coroutine_threadsafe(
             websocket.send_json({
@@ -155,6 +156,7 @@ async def websocket_endpoint(websocket: WebSocket):
         )
         
     async def gui_approval_callback(tool_name: str, tool_args: Dict[str, Any]) -> bool:
+        print(f"[WS gui_approval_callback] Requesting approval for {tool_name}")
         approval_id = str(uuid.uuid4())
         future = asyncio.get_event_loop().create_future()
         pending_approvals[session_id][approval_id] = future
@@ -169,6 +171,7 @@ async def websocket_endpoint(websocket: WebSocket):
         
         # Await client response
         approved = await future
+        print(f"[WS gui_approval_callback] Tool {tool_name} approved={approved}")
         return approved
 
     try:
@@ -178,9 +181,11 @@ async def websocket_endpoint(websocket: WebSocket):
             message = json.loads(data)
             
             msg_type = message.get("type")
+            print(f"[WS msg_received] msg_type={msg_type}")
             
             if msg_type == "chat_prompt":
                 prompt = message.get("prompt")
+                print(f"[WS msg_received] chat_prompt content: {prompt}")
                 # Run execute loop in a separate task so it doesn't block receiving WebSocket messages
                 asyncio.create_task(
                     run_agent_loop(agent, prompt, agent_callback, gui_approval_callback, websocket)
@@ -189,6 +194,7 @@ async def websocket_endpoint(websocket: WebSocket):
             elif msg_type == "approval_response":
                 approval_id = message.get("id")
                 approved = message.get("approved", False)
+                print(f"[WS msg_received] approval_response approved={approved}")
                 future = pending_approvals[session_id].get(approval_id)
                 if future and not future.done():
                     future.set_result(approved)
@@ -196,6 +202,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     
             elif msg_type == "change_mode":
                 new_mode = message.get("mode")
+                print(f"[WS msg_received] change_mode to {new_mode}")
                 if new_mode in ("ask", "plan", "code"):
                     agent.mode = new_mode
                     await websocket.send_json({
@@ -205,6 +212,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     
             elif msg_type == "change_model":
                 new_model = message.get("model")
+                print(f"[WS msg_received] change_model to {new_model}")
                 if new_model:
                     agent.model = new_model
                     await websocket.send_json({
@@ -213,13 +221,16 @@ async def websocket_endpoint(websocket: WebSocket):
                     })
                     
             elif msg_type == "clear_history":
+                print(f"[WS msg_received] clear_history")
                 agent.clear_history()
                 await websocket.send_json({
                     "type": "history_cleared"
                 })
                 
     except WebSocketDisconnect:
-        pass
+        print("[WS disconnected]")
+    except Exception as e:
+        print(f"[WS error in connection loop]: {e}")
     finally:
         # Cleanup
         await agent.disconnect_external_mcp_servers()
@@ -227,17 +238,20 @@ async def websocket_endpoint(websocket: WebSocket):
             del pending_approvals[session_id]
 
 async def run_agent_loop(agent: OmegaAgent, prompt: str, callback, approval_callback, websocket: WebSocket):
+    print(f"[WS run_agent_loop] Starting execute loop for: {prompt}")
     try:
         final_response = await agent.execute_loop(
             prompt,
             callback=callback,
             approval_callback=approval_callback
         )
+        print(f"[WS run_agent_loop] Finished execute loop. Response length: {len(final_response)}")
         await websocket.send_json({
             "type": "chat_response",
             "response": final_response
         })
     except Exception as e:
+        print(f"[WS run_agent_loop] Exception: {e}")
         await websocket.send_json({
             "type": "error",
             "message": str(e)
